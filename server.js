@@ -177,7 +177,6 @@ const treatPayload = payload => {
 };
 
 // Server
-
 app.use(bodyParser.json());
 
 app.set('port', (process.env.PORT || 5000));
@@ -190,6 +189,23 @@ app.post('/', ({body: payload}, response) => {
     response.end();
 });
 
-app.listen(app.get('port'), () => {
-    console.log(process.env.GITHUB_USERNAME, 'is running on port', app.get('port'));
-});
+
+const requiredVars = ['GITHUB_USERNAME','GITHUB_PASSWORD','REPOSITORY_OWNER','REPOSITORY_NAME'];
+function isReadyToStart() {
+    const stillMissing = requiredVars.filter(varName => !process.env[varName])
+    console.log('Still waiting for following env vars to be set:', stillMissing.join(', '));
+    return stillMissing.length === 0;
+}
+
+function startApp() {
+    if (isReadyToStart()) {
+        app.listen(app.get('port'), () => {
+            console.log(process.env.GITHUB_USERNAME, 'is running on port', app.get('port'));
+        });
+    } else {
+        setTimeout(startApp, 2000);
+    }
+
+}
+
+startApp();

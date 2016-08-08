@@ -192,8 +192,20 @@ app.post('/', ({body: payload}, response) => {
 
 const requiredVars = ['GITHUB_USERNAME','GITHUB_PASSWORD','REPOSITORY_OWNER','REPOSITORY_NAME'];
 function isReadyToStart() {
-    const stillMissing = requiredVars.filter(varName => !process.env[varName])
-    console.log('Still waiting for following env vars to be set:', stillMissing.join(', '));
+    const setVars = requiredVars.filter(varName => process.env[varName]);
+    const stillMissing = requiredVars.filter(varName => !process.env[varName]);
+
+
+    const setVarsOutput = setVars.map(varName => (
+        varName === 'GITHUB_PASSWORD' ?
+        `* ${varName} = ********` :
+        `* ${varName} = ${process.env[varName]}`
+    )).join('\n');
+    console.log('Set variables:\n' + setVarsOutput);
+
+    if (stillMissing.length > 0) {
+        console.log('Still waiting for following env vars to be set:', stillMissing.join(', '));
+    }
     return stillMissing.length === 0;
 }
 

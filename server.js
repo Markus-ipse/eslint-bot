@@ -186,7 +186,7 @@ app.post('/', ({body: payload}, response) => {
     if (payload && payload.commits) {
         treatPayload(payload);
     }
-    console.debug(process.env.GITHUB_USERNAME, ': Received request with payload ', Object.keys(payload).join(', '));
+    console.log(process.env.GITHUB_USERNAME, ': Received request with payload', Object.keys(payload).join(', '));
     response.end();
 });
 

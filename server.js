@@ -190,17 +190,19 @@ const sendComments = ({ filename, lineMap, messages, sha }) => {
  * @param  {Object} payload Push event's payload sent by Github.
  */
 const treatPayload = (payload) => {
-    const commitsFromPullRequest = github.pullRequests.getCommits(payload);
-    console.log('commitsFromPullRequest', commitsFromPullRequest);
-    commitsFromPullRequest.forEach((commit) => {
-        getFilesFromCommit((files, sha) => {
-            filterJavascriptFiles(files).forEach((file) => {
-                downloadFile(file, sha)
-                    .then(lintContent)
-                    .then(sendComments);
+    github.pullRequests.getCommits(payload,
+        (err, commitsFromPullRequest) => {
+            console.log('commitsFromPullRequest', commitsFromPullRequest, err);
+            commitsFromPullRequest.forEach((commit) => {
+                getFilesFromCommit((files, sha) => {
+                    filterJavascriptFiles(files).forEach((file) => {
+                        downloadFile(file, sha)
+                            .then(lintContent)
+                            .then(sendComments);
+                    });
+                }, commit);
             });
-        }, commit);
-    });
+        });
 };
 
 // Server

@@ -36,15 +36,6 @@ const eslint = new ESLintCLIEngine();
 // Functions
 
 /**
- * Get commits from a payload object.
- * @param  {Object} payload         the payload sent by Github
- * @return {Array} the commits pushed to Github
- */
-const getCommitsFromPushPayload = (payload) => payload.commits;
-
-const getCommitsFromPullRequest = (payload) => payload;
-
-/**
  * Get modified files from a commit.
  * @param  {Function} callback      callback called when the files are fetched
  * @param  {Object}   {id}          the commit object
@@ -189,8 +180,12 @@ const sendComments = ({ filename, lineMap, messages, sha }) => {
  * and the resulting linting messages are sent to Github as inline comments.
  * @param  {Object} payload Push event's payload sent by Github.
  */
-const treatPayload = (payload) => {
-    github.pullRequests.getCommits(payload,
+const treatPayload = ({ filename, number, raw_url }) => {
+    github.pullRequests.getCommits({
+            user: REPOSITORY_OWNER,
+            repo: REPOSITORY_NAME,
+            number,
+        },
         (err, commitsFromPullRequest) => {
             console.log('commitsFromPullRequest', commitsFromPullRequest, err);
             commitsFromPullRequest.forEach((commit) => {

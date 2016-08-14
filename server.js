@@ -209,7 +209,7 @@ app.use(bodyParser.json());
 app.set('port', (process.env.PORT || 5000));
 
 app.post('/', ({ body: payload }, response) => {
-    if (payload && payload.commits) {
+    if (payload && payload.pull_request) {
         treatPayload(payload);
     }
     console.log(process.env.GITHUB_USERNAME, ': Received request with payload:', payload);

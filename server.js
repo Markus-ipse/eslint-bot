@@ -209,7 +209,7 @@ app.post('/', ({ body: payload }, response) => {
     if (payload && payload.pull_request) {
         treatPayload(payload);
     }
-    console.log(process.env.GITHUB_USERNAME, ': Received request with payload:', payload);
+    console.log(process.env.GITHUB_USERNAME, ': Received request with payload:', JSON.stringify(payload));
     response.end();
 });
 

@@ -136,7 +136,7 @@ const sendSingleComment = (filename, lineMap, { ruleId = 'Eslint', message, line
             position: diffLinePosition,
         })
             .then(
-                (...args) => console.log('then args >>>>', numComment + 1,...args),
+                (...args) => console.log('then args >>>>', numComment + 1, ...args),
                 (...args) => console.log('catch args >>>>', numComment + 1, ...args)
             );
     } else {

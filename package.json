@@ -34,5 +34,9 @@
     "express",
     "eslint"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "cardinal": "^0.7.1",
+    "tape": "^4.6.0"
+  }
 }

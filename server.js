@@ -5,76 +5,39 @@ const app = express();
 const bodyParser = require('body-parser');
 const GitHubApi = require('github');
 const _ = require('lodash');
+const cardinal = require('cardinal');
 const ESLintCLIEngine = require('eslint').CLIEngine;
+const eslintConfig = require('./target-eslint-config.json');
 
-// Config variables
-
-import {
-    GITHUB_USERNAME, GITHUB_PASSWORD,
-    REPOSITORY_OWNER, REPOSITORY_NAME,
-    FILE_FILTER,
-} from './config';
+const hl = (code) => console.log(cardinal.highlight(JSON.stringify(code), { json: true }));
 
 // Github configuration
-
 const github = new GitHubApi({
     version: '3.0.0',
     headers: {
         'user-agent': 'ESLint-bot', // GitHub is happy with a unique user agent
     },
+    Promise: global.Promise,
 });
-github.authenticate({
-    type: 'basic',
-    username: GITHUB_USERNAME,
-    password: GITHUB_PASSWORD,
-});
+
 
 // Eslint configuration
+const eslint = new ESLintCLIEngine(eslintConfig);
+console.log('Eslint will be run with the following config');
+hl(eslintConfig);
 
-const eslint = new ESLintCLIEngine();
+const filterJavascriptFiles = (files) =>
+    files.filter(({ filename }) => filename.match(process.env.FILE_FILTER));
 
-// Functions
-
-/**
- * Get modified files from a commit.
- * @param  {Function} callback      callback called when the files are fetched
- * @param  {Object}   {id}          the commit object
- */
-const getFilesFromCommit = (callback, { id: sha }) => {
-    github.repos.getCommit({
-        user: REPOSITORY_OWNER,
-        repo: REPOSITORY_NAME,
-        sha,
-    }, (error, { files }) => {
-        if (error) {
-            console.log(error);
-        }
-        callback(files, sha);
-    });
-};
-
-/**
- * Filter files to keep only Javascript files. ESLint is for Javascript. No kidding.
- * @param  {Array} files        every files contained in the commit
- * @return {Array} Filtered files, which matched the FILE_FILTER regex (set in the config)
- */
-const filterJavascriptFiles = (files) => files.filter(({ filename }) => filename.match(FILE_FILTER));
-
-/**
- * Download a file from its url.
- * @param  {String}   filename          File filename
- * @param  {String}   patch             The commit's patch string.
- * @param  {String}   raw_url           File URL
- * @param  {String}   sha               Commit id
- * @return {Promise}  Promise that resolves to download content
- */
-const downloadFile = ({ filename, patch, raw_url }, sha) => { // eslint-disable-line
+const getContent = (file, ref, prNumber) => {
+    const { filename, patch, sha } = file;
+    // Todo: Can be rewritten without manually resolving or rejecting?
     return new Promise((resolve, reject) => {
         github.repos.getContent({
-            user: REPOSITORY_OWNER,
-            repo: REPOSITORY_NAME,
+            user: process.env.REPOSITORY_OWNER,
+            repo: process.env.REPOSITORY_NAME,
             path: filename,
-            ref: sha,
+            ref,
         }, (error, data) => {
             if (error) {
                 console.error(error);
@@ -84,6 +47,7 @@ const downloadFile = ({ filename, patch, raw_url }, sha) => { // eslint-disable-
                     filename,
                     patch,
                     sha,
+                    prNumber,
                     content: atob(data.content),
                 });
             }
@@ -110,10 +74,10 @@ const getLineMapFromPatchString = (patchString) => {
             fileLineIndex = line.match(/\+[0-9]+/)[0].slice(1) - 1;
         } else {
             diffLineIndex++;
-            if ('-' !== line[0]) {
+            if (line[0] !== '-') {
                 fileLineIndex++;
-                if ('+' === line[0]) {
-                    lineMap[fileLineIndex] = diffLineIndex;
+                if (line[0] === '+') {
+                    lineMap[fileLineIndex] = diffLineIndex; // eslint-disable-line no-param-reassign
                 }
             }
         }
@@ -129,12 +93,15 @@ const getLineMapFromPatchString = (patchString) => {
  * @param  {String} sha      Commit's id
  * @return {Array}  Linting messages
  */
-const lintContent = ({ filename, patch, content, sha }) => ({
-    filename,
-    lineMap: getLineMapFromPatchString(patch),
-    messages: _.get(eslint.executeOnText(content, filename), 'results[0].messages'),
-    sha,
-});
+const lintContent = ({ filename, patch, content, sha, prNumber }) => {
+    return {
+        filename,
+        lineMap: getLineMapFromPatchString(patch),
+        messages: _.get(eslint.executeOnText(content, filename), 'results[0].messages'),
+        sha,
+        prNumber,
+    };
+};
 
 /**
  * Send a comment to Github's commit view
@@ -145,19 +112,35 @@ const lintContent = ({ filename, patch, content, sha }) => ({
  * @param  {Integer} line  Line number (in the file)
  * @param  {String} sha      Commit's id
  */
-const sendSingleComment = (filename, lineMap, { ruleId = 'Eslint', message, line }, sha) => {
+const sendSingleComment = (filename, lineMap, { ruleId = 'Eslint', message, line }, sha, prNumber, numComment) => {
     const diffLinePosition = lineMap[line];
     // By testing this, we skip the linting messages related to non-modified lines.
     if (diffLinePosition) {
-        github.repos.createCommitComment({
-            user: REPOSITORY_OWNER,
-            repo: REPOSITORY_NAME,
-            sha,
+        console.log('Sending comment', numComment + 1);
+        hl({
+            user: process.env.REPOSITORY_OWNER,
+            repo: process.env.REPOSITORY_NAME,
+            number: prNumber,
             path: filename,
-            commit_id: sha, // eslint-disable-line
+            commit_id: sha,
             body: `**${ruleId}**: ${message}`,
             position: diffLinePosition,
         });
+        github.pullRequests.createComment({
+            user: process.env.REPOSITORY_OWNER,
+            repo: process.env.REPOSITORY_NAME,
+            number: prNumber,
+            body: `**${ruleId}**: ${message}`,
+            commit_id: sha,
+            path: filename,
+            position: diffLinePosition,
+        })
+            .then(
+                (...args) => console.log('then args >>>>', numComment + 1,...args),
+                (...args) => console.log('catch args >>>>', numComment + 1, ...args)
+            );
+    } else {
+        console.log('skipping', numComment + 1);
     }
 };
 
@@ -168,37 +151,28 @@ const sendSingleComment = (filename, lineMap, { ruleId = 'Eslint', message, line
  * @param  {Array} messages  ESLint messages
  * @param  {String} sha      Commit's id
  */
-const sendComments = ({ filename, lineMap, messages, sha }) => {
-    messages.forEach((message) => sendSingleComment(filename, lineMap, message, sha));
+const sendComments = ({ filename, lineMap, messages, sha, prNumber }) => {
+    console.log('Messages to send:', messages.length);
+    messages.forEach((message, i) => sendSingleComment(filename, lineMap, message, sha, prNumber, i));
 };
 
-/**
- * Main function, that treats the payload sent by Github.
- * First it gets the commits, the it extracts the filenames from the commit,
- * downloads and filters the files.
- * The remaining files are analyzed by the linter,
- * and the resulting linting messages are sent to Github as inline comments.
- * @param  {Object} payload Push event's payload sent by Github.
- */
-const treatPayload = ({ filename, number, raw_url }) => {
-    github.pullRequests.getCommits({
-            user: REPOSITORY_OWNER,
-            repo: REPOSITORY_NAME,
-            number,
-        },
-        (err, commitsFromPullRequest) => {
-            console.log('commitsFromPullRequest', commitsFromPullRequest, err);
-            commitsFromPullRequest.forEach((commit) => {
-                getFilesFromCommit((files, sha) => {
-                    filterJavascriptFiles(files).forEach((file) => {
-                        downloadFile(file, sha)
-                            .then(lintContent)
-                            .then(sendComments);
-                    });
-                }, commit);
-            });
-        });
-};
+function treatPayload(payload) {
+    const { number, pull_request } = payload;
+    github.pullRequests.getFiles({
+        user: process.env.REPOSITORY_OWNER,
+        repo: process.env.REPOSITORY_NAME,
+        number,
+    }).then((files) => {
+        const jsFiles = filterJavascriptFiles(files);
+        const lintedAndCommented = jsFiles.map((file) => (
+            getContent(file, pull_request.head.ref, number)
+                .then(lintContent)
+                .then(sendComments))
+        );
+
+        Promise.all(lintedAndCommented).then(() => console.log('All files linted'));
+    });
+}
 
 // Server
 app.use(bodyParser.json());
@@ -209,7 +183,7 @@ app.post('/', ({ body: payload }, response) => {
     if (payload && payload.pull_request) {
         treatPayload(payload);
     }
-    console.log(process.env.GITHUB_USERNAME, ': Received request with payload:', JSON.stringify(payload));
+    console.log(process.env.GITHUB_USERNAME, ': Received request');
     response.end();
 });
 
@@ -218,7 +192,6 @@ const requiredVars = ['GITHUB_USERNAME', 'GITHUB_PASSWORD', 'REPOSITORY_OWNER', 
 function isReadyToStart() {
     const setVars = requiredVars.filter((varName) => process.env[varName]);
     const stillMissing = requiredVars.filter((varName) => !process.env[varName]);
-
 
     const setVarsOutput = setVars.map((varName) => (
         varName === 'GITHUB_PASSWORD' ?
@@ -235,6 +208,12 @@ function isReadyToStart() {
 
 function startApp() {
     if (isReadyToStart()) {
+        github.authenticate({
+            type: 'basic',
+            username: process.env.GITHUB_USERNAME,
+            password: process.env.GITHUB_PASSWORD,
+        });
+
         app.listen(app.get('port'), () => {
             console.log(process.env.GITHUB_USERNAME, 'is running on port', app.get('port'));
         });

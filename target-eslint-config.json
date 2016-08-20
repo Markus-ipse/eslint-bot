@@ -1,0 +1,28 @@
+{
+    "parser": "babel-eslint",
+    "extends": "eslint:recommended",
+    "ecmaFeatures": {
+        "modules": true
+    },
+    "rules": {
+        "indent": [2, 4, {"SwitchCase": 1}],
+        "quotes": [2, "double"],
+        "linebreak-style": [2, "unix"],
+        "semi": [2, "always"],
+        "no-var": 2,
+        "no-extra-bind": 2,
+        "no-loop-func": 2,
+        "no-multi-spaces": [2, {"exceptions": {"Property": false}}],
+        "no-shadow": 2,
+        "eol-last": 2,
+        "require-yield": 2,
+        "no-spaced-func": 2,
+        "space-before-function-paren": [2, "never"],
+        "space-after-keywords": 2,
+        "space-before-blocks": 2
+    },
+    "env": {
+        "es6": true,
+        "node": true
+    }
+}

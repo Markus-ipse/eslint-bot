@@ -15,7 +15,7 @@ const hl = (code) => console.log(cardinal.highlight(JSON.stringify(code), { json
 const github = new GitHubApi({
     version: '3.0.0',
     headers: {
-        'user-agent': 'ESLint-bot', // GitHub is happy with a unique user agent
+        'user-agent': 'esLint-bot', // GitHub is happy with a unique user agent
     },
     Promise: global.Promise,
 });
@@ -29,8 +29,8 @@ hl(eslintConfig);
 const filterJavascriptFiles = (files) =>
     files.filter(({ filename }) => filename.match(process.env.FILE_FILTER));
 
-const getContent = (file, ref, prNumber) => {
-    const { filename, patch, sha } = file;
+const getContent = (file, ref, prNumber, sha) => {
+    const { filename, patch } = file;
     // Todo: Can be rewritten without manually resolving or rejecting?
     return new Promise((resolve, reject) => {
         github.repos.getContent({
@@ -91,17 +91,16 @@ const getLineMapFromPatchString = (patchString) => {
  * @param  {String} patch    Commit's Git patch
  * @param  {String} content  File content
  * @param  {String} sha      Commit's id
+ * @param  {Number} prNumber   Pull request number
  * @return {Array}  Linting messages
  */
-const lintContent = ({ filename, patch, content, sha, prNumber }) => {
-    return {
-        filename,
-        lineMap: getLineMapFromPatchString(patch),
-        messages: _.get(eslint.executeOnText(content, filename), 'results[0].messages'),
-        sha,
-        prNumber,
-    };
-};
+const lintContent = ({ filename, patch, content, sha, prNumber }) => ({
+    filename,
+    lineMap: getLineMapFromPatchString(patch),
+    messages: _.get(eslint.executeOnText(content, filename), 'results[0].messages'),
+    sha,
+    prNumber,
+});
 
 /**
  * Send a comment to Github's commit view
@@ -109,8 +108,9 @@ const lintContent = ({ filename, patch, content, sha, prNumber }) => {
  * @param  {Object} lineMap  The map between file and diff view line numbers
  * @param  {String} ruleId ESLint rule id
  * @param  {String} message  ESLint message
- * @param  {Integer} line  Line number (in the file)
+ * @param  {Number} line  Line number (in the file)
  * @param  {String} sha      Commit's id
+ * @param  {Number} prNumber   Pull request number
  */
 const sendSingleComment = (filename, lineMap, { ruleId = 'Eslint', message, line }, sha, prNumber, numComment) => {
     const diffLinePosition = lineMap[line];
@@ -150,10 +150,12 @@ const sendSingleComment = (filename, lineMap, { ruleId = 'Eslint', message, line
  * @param  {Object} lineMap  The map between file and diff view line numbers
  * @param  {Array} messages  ESLint messages
  * @param  {String} sha      Commit's id
+ * @param  {Number} prNumber   Pull request number
  */
 const sendComments = ({ filename, lineMap, messages, sha, prNumber }) => {
     console.log('Messages to send:', messages.length);
-    messages.forEach((message, i) => sendSingleComment(filename, lineMap, message, sha, prNumber, i));
+    messages.forEach((message, i) =>
+        sendSingleComment(filename, lineMap, message, sha, prNumber, i));
 };
 
 function treatPayload(payload) {
@@ -165,7 +167,7 @@ function treatPayload(payload) {
     }).then((files) => {
         const jsFiles = filterJavascriptFiles(files);
         const lintedAndCommented = jsFiles.map((file) => (
-            getContent(file, pull_request.head.ref, number)
+            getContent(file, pull_request.head.ref, number, pull_request.head.sha)
                 .then(lintContent)
                 .then(sendComments))
         );
@@ -213,7 +215,6 @@ function startApp() {
             username: process.env.GITHUB_USERNAME,
             password: process.env.GITHUB_PASSWORD,
         });
-
         app.listen(app.get('port'), () => {
             console.log(process.env.GITHUB_USERNAME, 'is running on port', app.get('port'));
         });

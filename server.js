@@ -5,11 +5,8 @@ const app = express();
 const bodyParser = require('body-parser');
 const GitHubApi = require('github');
 const _ = require('lodash');
-const cardinal = require('cardinal');
 const ESLintCLIEngine = require('eslint').CLIEngine;
 const eslintConfig = require('./target-eslint-config.json');
-
-const hl = (code) => console.log(cardinal.highlight(JSON.stringify(code), { json: true }));
 
 // Github configuration
 const github = new GitHubApi({
@@ -23,8 +20,6 @@ const github = new GitHubApi({
 
 // Eslint configuration
 const eslint = new ESLintCLIEngine(eslintConfig);
-console.log('Eslint will be run with the following config');
-hl(eslintConfig);
 
 const filterJavascriptFiles = (files) =>
     files.filter(({ filename }) => filename.match(process.env.FILE_FILTER));
@@ -97,7 +92,7 @@ const getLineMapFromPatchString = (patchString) => {
 const lintContent = ({ filename, patch, content, sha, prNumber }) => ({
     filename,
     lineMap: getLineMapFromPatchString(patch),
-    messages: _.get(eslint.executeOnText(content, filename), 'results[0].messages'),
+    lintErrors: _.get(eslint.executeOnText(content, filename), 'results[0].messages'),
     sha,
     prNumber,
 });
@@ -106,43 +101,29 @@ const lintContent = ({ filename, patch, content, sha, prNumber }) => ({
  * Send a comment to Github's commit view
  * @param  {String} filename File filename
  * @param  {Object} lineMap  The map between file and diff view line numbers
- * @param  {String} ruleId ESLint rule id
- * @param  {String} message  ESLint message
- * @param  {Number} line  Line number (in the file)
+ * @param  {Object} lintError  Lint error
  * @param  {String} sha      Commit's id
  * @param  {Number} prNumber   Pull request number
  */
-const sendSingleComment = (filename, lineMap, { ruleId = 'Eslint', message, line }, sha, prNumber, numComment) => {
+const sendSingleComment = (filename, lineMap, lintError, sha, prNumber) => {
+    const { message, line } = lintError;
     const diffLinePosition = lineMap[line];
     // By testing this, we skip the linting messages related to non-modified lines.
     if (diffLinePosition) {
-        console.log('Sending comment', numComment + 1);
-        hl({
-            user: process.env.REPOSITORY_OWNER,
-            repo: process.env.REPOSITORY_NAME,
-            number: prNumber,
-            path: filename,
-            commit_id: sha,
-            body: `**${ruleId}**: ${message}`,
-            position: diffLinePosition,
-        });
+        // return console.log('Lint error on line:', diffLinePosition, message);
         github.pullRequests.createComment({
             user: process.env.REPOSITORY_OWNER,
             repo: process.env.REPOSITORY_NAME,
             number: prNumber,
-            body: `**${ruleId}**: ${message}`,
+            body: message,
             commit_id: sha,
             path: filename,
             position: diffLinePosition,
-        })
-            .then(
-                (...args) => console.log('then args >>>>', numComment + 1, ...args),
-                (...args) => console.log('catch args >>>>', numComment + 1, ...args)
-            );
-    } else {
-        console.log('skipping', numComment + 1);
+        });
     }
 };
+
+const getKey = (line) => '.' + line; // eslint-disable-line prefer-template
 
 /**
  * Send the comments for all the linting messages, to Github
@@ -152,10 +133,24 @@ const sendSingleComment = (filename, lineMap, { ruleId = 'Eslint', message, line
  * @param  {String} sha      Commit's id
  * @param  {Number} prNumber   Pull request number
  */
-const sendComments = ({ filename, lineMap, messages, sha, prNumber }) => {
-    console.log('Messages to send:', messages.length);
-    messages.forEach((message, i) =>
-        sendSingleComment(filename, lineMap, message, sha, prNumber, i));
+const sendComments = ({ filename, lineMap, lintErrors, sha, prNumber }) => {
+    const errorsByLine = lintErrors.reduce((acc, lintError) => {
+        const { ruleId = 'Eslint', message, line } = lintError;
+        const key = getKey(line);
+        if (!acc[key]) {
+            acc[key] = { line, message: '' }; // eslint-disable-line no-param-reassign
+        }
+
+        acc[key].message = [acc[key].message]  // eslint-disable-line no-param-reassign
+            .concat(`**${ruleId}**: ${message}`)
+            .join('\n');
+
+        return acc;
+    }, {});
+
+    Object.keys(errorsByLine).forEach((line) => (
+        sendSingleComment(filename, lineMap, errorsByLine[line], sha, prNumber)
+    ));
 };
 
 function treatPayload(payload) {
@@ -166,13 +161,11 @@ function treatPayload(payload) {
         number,
     }).then((files) => {
         const jsFiles = filterJavascriptFiles(files);
-        const lintedAndCommented = jsFiles.map((file) => (
+        jsFiles.forEach((file) => (
             getContent(file, pull_request.head.ref, number, pull_request.head.sha)
                 .then(lintContent)
                 .then(sendComments))
         );
-
-        Promise.all(lintedAndCommented).then(() => console.log('All files linted'));
     });
 }
 
@@ -182,7 +175,7 @@ app.use(bodyParser.json());
 app.set('port', (process.env.PORT || 5000));
 
 app.post('/', ({ body: payload }, response) => {
-    if (payload && payload.pull_request) {
+    if (payload && payload.pull_request && payload.action === 'opened') {
         treatPayload(payload);
     }
     console.log(process.env.GITHUB_USERNAME, ': Received request');

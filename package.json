@@ -11,7 +11,6 @@
     "babel": "^5.8.23",
     "babel-eslint": "^6.0.0",
     "body-parser": "^1.13.3",
-    "cardinal": "^0.7.1",
     "eslint": "^2.11.1",
     "eslint-config-airbnb": "^9.0.1",
     "eslint-plugin-import": "^1.8.1",

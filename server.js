@@ -1,4 +1,3 @@
-// Dependencies
 const atob = require('atob');
 const express = require('express');
 const app = express();
@@ -65,7 +64,7 @@ function getLineMapFromPatchString(patchString) {
  * @param  {String} sha      Commit's id
  * @param  {Number} prNumber   Pull request number
  */
-const sendSingleComment = ({ filename, lineMap, lintError, sha, prNumber }) => {
+function sendSingleComment({ filename, lineMap, lintError, sha, prNumber }) {
     const { message, line } = lintError;
     const diffLinePosition = lineMap[line];
     // By testing this, we skip the linting messages related to non-modified lines.
@@ -81,18 +80,13 @@ const sendSingleComment = ({ filename, lineMap, lintError, sha, prNumber }) => {
             position: diffLinePosition,
         });
     }
-};
+}
 
-const getKey = (line) => '.' + line; // eslint-disable-line prefer-template
-
-/**
- * Send the comments for all the linting messages, to Github
- * @param  {Array} lintErrors  ESLint errors
- */
-function groupLintErrorsByLine({ lintErrors }) {
+function groupLintErrorsByLine(lintErrors) {
     return lintErrors.reduce((acc, lintError) => {
         const { ruleId = 'Eslint', message, line } = lintError;
-        const key = getKey(line);
+        const key = '.' + line; // eslint-disable-line prefer-template
+
         if (!acc[key]) {
             acc[key] = { line, message: '' }; // eslint-disable-line no-param-reassign
         }
@@ -105,34 +99,19 @@ function groupLintErrorsByLine({ lintErrors }) {
     }, {});
 }
 
-/**
- * Lint a raw content passed as a string, then return the linting messages.
- * @param  {String} filename File filename
- * @param  {String} patch    Commit's Git patch
- * @param  {String} content  File content
- * @return {Object}  Linting messages
- */
-function lintContent({ filename, patch, content }) {
-    return {
-        filename,
-        lineMap: getLineMapFromPatchString(patch),
-        lintErrors: _.get(eslint.executeOnText(content, filename), 'results[0].messages'),
-    };
+function lintContent(content) {
+    return _.get(eslint.executeOnText(content), 'results[0].messages');
 }
 
 function getContent(file, ref) {
-    const { filename, patch } = file;
+    const { filename } = file;
 
     return github.repos.getContent({
         user: env('REPOSITORY_OWNER'),
         repo: env('REPOSITORY_NAME'),
         path: filename,
         ref,
-    }).then((data) => ({
-        filename,
-        patch,
-        content: atob(data.content),
-    }));
+    }).then((data) => atob(data.content));
 }
 
 function treatPayload(payload) {
@@ -189,9 +168,7 @@ function isReadyToStart() {
     const stillMissing = requiredVars.filter((varName) => !env(varName));
 
     const definedVars = definedVariables.map((varName) => (
-        varName === 'GITHUB_PASSWORD' ?
-            `* ${varName} = ********` :
-            `* ${varName} = ${env(varName)}`
+        varName === 'GITHUB_PASSWORD' ? `* ${varName} = ********` : `* ${varName} = ${env(varName)}`
     )).join('\n');
 
     console.log(`Defined variables:\n${definedVars}`); // eslint-disable-line no-console

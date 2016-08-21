@@ -21,7 +21,7 @@
     "lodash": "^3.10.1"
   },
   "engines": {
-    "node": ">=4.5.0"
+    "node": ">=6.0.0"
   },
   "repository": {
     "type": "git",

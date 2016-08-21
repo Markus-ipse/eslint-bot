@@ -124,9 +124,9 @@ function treatPayload(payload) {
         repo: env('REPOSITORY_NAME'),
         number,
     }).then((files) => {
-        const jsFiles = filterJavascriptFiles(files);
         console.time('Lint pull request');
-        jsFiles.map((file) => {
+        const jsFiles = filterJavascriptFiles(files);
+        const filesLintedAndCommented = Promise.all(jsFiles.map((file) => {
             const sendComments = (errorsByLine) => {
                 const start = +Date.now();
                 const sentComments = Object.keys(errorsByLine).map((line) => (
@@ -151,9 +151,12 @@ function treatPayload(payload) {
             return getContent(file, pull_request.head.ref)
                 .then(lintContent)
                 .then(groupLintErrorsByLine)
-                .then(sendComments)
-                .then(() => console.timeEnd('Lint pull request'));
-        });
+                .then(sendComments);
+        }));
+
+        filesLintedAndCommented.then(console.timeEnd('Lint pull request'));
+
+        return filesLintedAndCommented;
     });
 }
 

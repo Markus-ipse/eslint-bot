@@ -70,7 +70,7 @@ function sendSingleComment({ filename, lineMap, lintError, sha, prNumber }) {
     // By testing this, we skip the linting messages related to non-modified lines.
     if (diffLinePosition) {
         // return console.log('Lint error on line:', diffLinePosition, message);
-        github.pullRequests.createComment({
+        return github.pullRequests.createComment({
             user: env('REPOSITORY_OWNER'),
             repo: env('REPOSITORY_NAME'),
             number: prNumber,
@@ -80,6 +80,8 @@ function sendSingleComment({ filename, lineMap, lintError, sha, prNumber }) {
             position: diffLinePosition,
         });
     }
+
+    return null;
 }
 
 function groupLintErrorsByLine(lintErrors) {
@@ -117,16 +119,17 @@ function getContent(file, ref) {
 function treatPayload(payload) {
     const { number, pull_request } = payload;
 
-    github.pullRequests.getFiles({
+    return github.pullRequests.getFiles({
         user: env('REPOSITORY_OWNER'),
         repo: env('REPOSITORY_NAME'),
         number,
     }).then((files) => {
         const jsFiles = filterJavascriptFiles(files);
-
-        jsFiles.forEach((file) => {
+        console.time('Lint pull request');
+        jsFiles.map((file) => {
             const sendComments = (errorsByLine) => {
-                Object.keys(errorsByLine).forEach((line) => (
+                const start = +Date.now();
+                const sentComments = Object.keys(errorsByLine).map((line) => (
                     sendSingleComment({
                         filename: file.filename,
                         lineMap: getLineMapFromPatchString(file.patch),
@@ -135,12 +138,16 @@ function treatPayload(payload) {
                         prNumber: number,
                     })
                 ));
+
+                return Promise.all(sentComments).then(() =>
+                    console.log(`Commented on ${file.filename} (${+Date.now() - start})`));
             };
 
-            getContent(file, pull_request.head.ref)
+            return getContent(file, pull_request.head.ref)
                 .then(lintContent)
                 .then(groupLintErrorsByLine)
-                .then(sendComments);
+                .then(sendComments)
+                .then(() => console.timeEnd('Lint pull request'));
         });
     });
 }

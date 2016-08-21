@@ -139,8 +139,13 @@ function treatPayload(payload) {
                     })
                 ));
 
-                return Promise.all(sentComments).then(() =>
-                    console.log(`Commented on ${file.filename} (${+Date.now() - start})`));
+                const commentsDelivered = Promise.all(sentComments);
+
+                commentsDelivered.then(() =>
+                    console.log(`Commented on ${file.filename} (${+Date.now() - start}ms)`)
+                );
+
+                return commentsDelivered;
             };
 
             return getContent(file, pull_request.head.ref)
